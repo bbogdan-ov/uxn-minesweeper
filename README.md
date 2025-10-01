@@ -9,7 +9,7 @@ Minesweeper implemented in [UXNTAL][] for [UXN][]! YEAH!
 
 ## Controls
 
-`left mouse button` - open cell
+`left mouse button` - open cell\
 `right mouse button` - flag/unflag cell
 
 ## Building
