@@ -109,9 +109,9 @@ BRK
 	( col* row* ) [ FIELD_SIZE MUL2 ] ADD2 ( idx* )
 
 	( Open cell )
-	.Mouse/state DEI #01 NEQ ?{ ( idx* ) CELL_OPENED cell-toggle-bits ?&ok }
+	.Mouse/state DEI #01 NEQ ?{ ( idx* ) cell-open ?&ok }
 	( Flag cell )
-	.Mouse/state DEI #04 NEQ ?{ ( idx* ) CELL_FLAGGED cell-toggle-bits ?&ok }
+	.Mouse/state DEI #04 NEQ ?{ ( idx* ) cell-flag ?&ok }
 
 	( Cell was not changed ) RET
 	&ok
@@ -122,23 +122,32 @@ RET
 
 ( == Field == )
 
-@cell-toggle-bits ( idx* bits -- changed )
-	STH
-	[ ;field ADD2 ] LDAk ( addr* cell )
-	STH
+@cell-open ( idx* -- changed )
+	[ ;field ADD2 ] LDAk ( addr* cell ) STH
 
 	STHrk ( cell ) cell-is-opened
 	STHrk ( cell ) cell-is-flagged
-	ORA ?&cannot !&over
-	&cannot
-		( addr* | bits cell )
-		POP2r POP2
+	ORA #00 EQU ?{
+		( addr* | cell )
+		POP2 POPr
 		#00 RET
-	&over
+	}
 
-	( Toggle bits )
-	STHr STHr EOR
-	( Store the cell back )
+	STHr ( cell ) CELL_OPENED EOR
+	ROT ROT ( cell addr* ) STA
+	#01
+RET
+
+@cell-flag ( idx* -- changed )
+	[ ;field ADD2 ] LDAk ( addr* cell ) STH
+
+	STHrk ( cell ) cell-is-opened #00 EQU ?{
+		( addr* | cell )
+		POP2 POPr
+		#00 RET
+	}
+
+	STHr ( cell ) CELL_FLAGGED EOR
 	ROT ROT ( cell addr* ) STA
 	#01
 RET
