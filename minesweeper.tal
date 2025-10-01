@@ -1,0 +1,366 @@
+|00 @System/vector $2 &expansion $2 &wst $1 &rst $1 &metadata $2 &r $2 &g $2 &b $2 &debug $1 &state $1
+|10 @Console/vector $2 &read $5 &type $1 &write $1 &error $1
+|20 @Screen/vector $2 &width $2 &height $2 &auto $2 &x $2 &y $2 &addr $2 &pixel $1 &sprite $1
+|90 @Mouse/vector $2 &x $2 &y $2 &state $4 &scrollx $2 &scrolly
+|c0 @DateTime &year $2 &month $1 &day $1 &hour $1 &minute $1 &second $1 &dotw $1 &doty $2 &isdst $1
+
+|00 @Cell
+	&empty $0a
+	&mine $1
+
+( == Constants == )
+
+%SCREEN_WIDTH  { #0080 }
+%SCREEN_HEIGHT { #0080 }
+
+( Field width and height in cells )
+%FIELD_SIZE   { #0010 } ( 16 )
+%FIELD_SIZE-1 { #000f } ( FIELD_SIZE - 1 )
+( Number of cells in the field )
+%FIELD_COUNT      { #0100 } ( 256 )
+%FIELD_COUNT-1    { #00ff } ( FIELD_COUNT - 1 )
+%FIELD_COUNT-SIZE { #00f0 } ( FIELD_COUNT - FIELD_SIZE )
+
+( Cell width and height in pixels )
+%CELL_SIZE    { #0008 }
+%CELL_SIZE-1  { #0007 } ( CELL_SIZE - 1 )
+%CELL_OPENED  { #10 }
+%CELL_FLAGGED { #20 }
+
+( == Macros == )
+
+%RET { JMP2r }
+
+%MOD  ( num div -- rem )    { DIVk MUL SUB }
+%MOD2 ( num* div* -- rem* ) { DIV2k MUL2 SUB2 }
+%CELL_SIZE.MUL2 ( a* -- CELL_SIZE * a* ) { #30 SFT2 }
+%BYTE2SHORT ( a -- a* ) { #00 SWP }
+
+%DEC2 ( num* -- num*-1 ) { #ffff ADD2 }
+
+%cell-is-closed  ( cell -- bool ) { [ CELL_OPENED  AND ] #00 EQU }
+%cell-is-opened  ( cell -- bool ) { [ CELL_OPENED  AND ] #00 NEQ }
+%cell-is-flagged ( cell -- bool ) { [ CELL_FLAGGED AND ] #00 NEQ }
+
+|0100 ( -> )
+	( Set theme )
+	#e27f .System/r DEO2
+	#e274 .System/g DEO2
+	#e272 .System/b DEO2
+
+	( Set screen size )
+	SCREEN_WIDTH .Screen/width DEO2
+	SCREEN_HEIGHT .Screen/height DEO2
+
+	prng-init
+	field-randomize
+	field-draw
+
+	;on-mouse  .Mouse/vector DEO2
+BRK
+
+@on-mouse ( -> )
+	( Clear previous outline )
+	[ LIT2 &outline-x $2 ] .Screen/x DEO2
+	[ LIT2 &outline-y $2 ] .Screen/y DEO2
+	;sprite-outline .Screen/addr DEO2
+	[ #40 .Screen/sprite ] DEO
+
+	( Clear previous cursor )
+	[ LIT2 &mouse-x $2 ] .Screen/x DEO2
+	[ LIT2 &mouse-y $2 ] .Screen/y DEO2
+	;sprite-cursor .Screen/addr DEO2
+	[ #40 .Screen/sprite ] DEO
+
+	.Mouse/x DEI2 ,&mouse-x STR2
+	.Mouse/y DEI2 ,&mouse-y STR2
+
+	[ .Mouse/x DEI2 CELL_SIZE DIV2 CELL_SIZE.MUL2 ] ,&outline-x STR2
+	[ .Mouse/y DEI2 CELL_SIZE DIV2 CELL_SIZE.MUL2 ] ,&outline-y STR2
+
+	( Draw outline )
+	,&outline-x LDR2 .Screen/x DEO2
+	,&outline-y LDR2 .Screen/y DEO2
+	;sprite-outline .Screen/addr DEO2
+	[ #4a .Screen/sprite ] DEO
+
+	( Draw cursor )
+	,&mouse-x LDR2 .Screen/x DEO2
+	,&mouse-y LDR2 .Screen/y DEO2
+	;sprite-cursor .Screen/addr DEO2
+	[ #4f .Screen/sprite ] DEO
+
+	( On click )
+	.Mouse/state DEI ?&click !&over
+	&click
+		[ LIT &clicked $1 ] ?&over
+		on-click
+	&over
+
+	[ .Mouse/state DEI ,&clicked ] STR
+BRK
+
+@on-click ( -- )
+	[ .Mouse/x DEI2 CELL_SIZE DIV2 ] ( col* )
+		[ DUP2 FIELD_SIZE LTH2 ] ?{ POP2 RET }
+	[ .Mouse/y DEI2 CELL_SIZE DIV2 ] ( row* )
+		[ DUP2 FIELD_SIZE LTH2 ] ?{ POP2 POP2 RET }
+
+	( col* row* ) [ FIELD_SIZE MUL2 ] ADD2 ( idx* )
+
+	( Open cell )
+	.Mouse/state DEI #01 NEQ ?{ ( idx* ) CELL_OPENED cell-toggle-bits ?&ok }
+	( Flag cell )
+	.Mouse/state DEI #04 NEQ ?{ ( idx* ) CELL_FLAGGED cell-toggle-bits ?&ok }
+
+	( Cell was not changed ) RET
+	&ok
+
+	( Redraw the field )
+	field-draw
+RET
+
+( == Field == )
+
+@cell-toggle-bits ( idx* bits -- changed )
+	STH
+	[ ;field ADD2 ] LDAk ( addr* cell )
+	STH
+
+	STHrk ( cell ) cell-is-opened
+	STHrk ( cell ) cell-is-flagged
+	ORA ?&cannot !&over
+	&cannot
+		( addr* | bits cell )
+		POP2r POP2
+		#00 RET
+	&over
+
+	( Toggle bits )
+	STHr STHr EOR
+	( Store the cell back )
+	ROT ROT ( cell addr* ) STA
+	#01
+RET
+
+@cell-right ( idx* -- idx* )
+	[ DUP2 FIELD_SIZE MOD2 ] FIELD_SIZE-1 EQU2 ?cell-outside
+		( != ) INC2 RET
+@cell-left ( idx* -- idx* )
+	[ DUP2 FIELD_SIZE MOD2 ] #0000 EQU2 ?cell-outside
+		( != ) DEC2 RET
+@cell-top ( idx* -- idx* )
+	[ DUP2 FIELD_SIZE DIV2 ] #0000 EQU2 ?cell-outside
+		( != ) FIELD_SIZE SUB2 RET
+@cell-bottom ( idx* -- idx* )
+	[ DUP2 FIELD_SIZE DIV2 ] FIELD_SIZE-1 EQU2 ?cell-outside
+		( != ) FIELD_SIZE ADD2 RET
+@cell-outside
+	POP2 FIELD_COUNT RET
+
+@cell-draw ( idx* -- )
+	( Draw cell )
+	[ ( idx* ) ;field ADD2 ] LDA ( addr* cell )
+
+	[ DUP cell-is-closed ] ?&closed
+	( opened )
+		( cell ) [ CELL_OPENED EOR ] BYTE2SHORT ( cell* )
+
+		[ CELL_SIZE.MUL2 ;sprite-cell-opened ADD2 ] .Screen/addr DEO2
+		[ #01 .Screen/sprite ] DEO
+		!&over
+	&closed
+		;sprite-cell-closed .Screen/addr DEO2
+		[ #01 .Screen/sprite ] DEO
+
+		[ cell-is-flagged ] ?&flagged !&over
+		&flagged
+			;sprite-flag .Screen/addr DEO2
+			[ #0f .Screen/sprite ] DEO
+	&over
+RET
+
+@field-randomize ( -- )
+	( Randomly place mines )
+	#0000 &again DUP2 FIELD_COUNT-1 GTH2 ?{
+		prng #0007 MOD2 #0006 EQU2 ?&mine !&over
+		&mine
+			( idx* ) STH2k
+			.Cell/mine [ STH2r ;field ADD2 ] STA
+		&over
+		
+		INC2
+		!&again
+	} POP2
+
+	( Count neighbor mines )
+	#0000 &again-count DUP2 FIELD_COUNT-1 GTH2 ?{
+		[ DUP2 ;field ADD2 ] LDA ( cell ) .Cell/mine EQU ?&skip
+
+		LITr 00 ( n-nbors )
+		[ DUP2 cell-top    cell-left  ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-top               ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-top    cell-right ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-right             ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-bottom cell-right ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-bottom            ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-bottom cell-left  ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+		[ DUP2 cell-left              ;field ADD2 ] LDA .Cell/mine EQU STH ADDr
+
+		[ DUP2 ;field ADD2 ] LDAk ( addr* cell )
+		STHr ADD
+		ROT ROT ( cell addr* )
+		STA
+		
+		&skip
+		INC2
+		!&again-count
+	} POP2
+RET
+
+@field-draw ( -- )
+	( for [0, FIELD_COUNT-1) )
+	#0000 &again DUP2 FIELD_COUNT-1 GTH2 ?{
+		( idx* ) STH2
+
+		STH2rk ( idx* ) FIELD_SIZE DIV2 ( cell-row* )
+		STH2rk ( idx* ) FIELD_SIZE MOD2 ( cell-col* )
+		( cell-row* cell-col* )
+
+		( Set cell position )
+		CELL_SIZE.MUL2 ,&cell-x STR2
+		CELL_SIZE.MUL2 ,&cell-y STR2
+		[ LIT2 &cell-x $2 ] .Screen/x DEO2
+		[ LIT2 &cell-y $2 ] .Screen/y DEO2
+
+		STH2rk cell-draw
+
+		[ STH2rk ;field ADD2 ] LDA cell-is-opened ?&opened !&closed
+		&opened
+			( Inner top right )
+			[ STH2rk cell-right ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			AND ?&inner-top-right !&inner-no-top-right
+			&inner-top-right
+				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
+				;&cell-y LDA2                  .Screen/y DEO2
+				[ #01 .Screen/pixel ] DEO
+			&inner-no-top-right
+
+			( Inner top left )
+			[ STH2rk cell-left  ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			AND ?&inner-top-left !&inner-no-top-left
+			&inner-top-left
+				;&cell-x LDA2 .Screen/x DEO2
+				;&cell-y LDA2 .Screen/y DEO2
+				[ #01 .Screen/pixel ] DEO
+			&inner-no-top-left
+
+			( Inner bottom right )
+			[ STH2rk cell-right  ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			AND ?&inner-bottom-right !&inner-no-bottom-right
+			&inner-bottom-right
+				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
+				[ #01 .Screen/pixel ] DEO
+			&inner-no-bottom-right
+
+			( Inner bottom left )
+			[ STH2rk cell-left   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
+			AND ?&inner-bottom-left !&inner-no-bottom-left
+			&inner-bottom-left
+				;&cell-x LDA2                  .Screen/x DEO2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
+				[ #01 .Screen/pixel ] DEO
+			&inner-no-bottom-left
+			[ !&over ]
+		&closed
+			( Outer top right )
+			[ STH2rk cell-right ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			AND ?&outer-top-right !&outer-no-top-right
+			&outer-top-right
+				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
+				;&cell-y LDA2                  .Screen/y DEO2
+				[ #00 .Screen/pixel ] DEO
+			&outer-no-top-right
+
+			( Outer top left )
+			[ STH2rk cell-left ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			[ STH2rk cell-top  ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			AND ?&outer-top-left !&outer-no-top-left
+			&outer-top-left
+				;&cell-x LDA2 .Screen/x DEO2
+				;&cell-y LDA2 .Screen/y DEO2
+				[ #00 .Screen/pixel ] DEO
+			&outer-no-top-left
+
+			( Outer bottom right )
+			[ STH2rk cell-right  ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			AND ?&outer-bottom-right !&outer-no-bottom-right
+			&outer-bottom-right
+				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
+				[ #00 .Screen/pixel ] DEO
+			&outer-no-bottom-right
+
+			( Outer bottom left )
+			[ STH2rk cell-left   ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
+			AND ?&outer-bottom-left !&outer-no-bottom-left
+			&outer-bottom-left
+				;&cell-x LDA2                  .Screen/x DEO2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
+				[ #00 .Screen/pixel ] DEO
+			&outer-no-bottom-left
+		&over
+		
+		STH2r INC2
+		!&again
+	} POP2 RET
+( 16x16 cells field + 1 always zero cell )
+@field $0100 $1
+
+( == Utils == )
+
+@prng-init ( -- )
+	.DateTime/minute DEI .DateTime/second DEI
+	,prng/x STR2
+RET
+
+@prng ( -- number* )
+	( https://en.wikipedia.org/wiki/Linear_congruential_generator )
+	%M { #0219 } ( modulus )
+	%A { #121f } ( multiplier )
+	%C { #31f3 } ( increment )
+
+	[ LIT2 &x $2 ] ( X0 - seed )
+
+	A MUL2 C ADD2 M MOD2 ( (X0 * a + c) % m )
+	DUP2 ,&x STR2
+RET
+
+( == Assets == )
+
+@sprite-cursor  80 c0 e0 f0 f8 e0 10 00
+@sprite-outline 42 81 00 00 00 00 81 42
+
+@sprite-flag 0038 3c3e 2020 7000
+@sprite-cell-closed  ff ff ff ff ff ff ff ff
+( @sprite-cell-closed  fe fe fe fe fe fe fe 00 )
+@sprite-cell-opened
+	( 0 )    $8
+	( 1 )    00 10 30 10 10 38 00 00
+	( 2 )    00 7c 04 7c 40 7c 00 00
+	( 3 )    00 7c 04 1c 04 7c 00 00
+	( 4 )    00 44 44 7c 04 04 00 00
+	( 5 )    00 7c 40 7c 04 7c 00 00
+	( 6 )    00 7c 40 7c 44 7c 00 00
+	( 7 )    00 7c 04 04 04 04 00 00
+	( 8 )    00 7c 44 7c 44 7c 00 00
+	( 9 )    00 7c 44 7c 04 7c 00 00
+	( mine ) 00 54 38 7c 38 54 00 00
