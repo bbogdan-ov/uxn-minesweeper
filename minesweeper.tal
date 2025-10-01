@@ -225,103 +225,106 @@ RET
 
 		STH2rk ( idx* ) FIELD_SIZE DIV2 ( cell-row* )
 		STH2rk ( idx* ) FIELD_SIZE MOD2 ( cell-col* )
-		( cell-row* cell-col* )
 
 		( Set cell position )
-		CELL_SIZE.MUL2 ,&cell-x STR2
-		CELL_SIZE.MUL2 ,&cell-y STR2
+		( cell-col* ) CELL_SIZE.MUL2 ,&cell-x STR2
+		( cell-row* ) CELL_SIZE.MUL2 ,&cell-y STR2
+
 		[ LIT2 &cell-x $2 ] .Screen/x DEO2
 		[ LIT2 &cell-y $2 ] .Screen/y DEO2
-
 		STH2rk cell-draw
 
-		[ STH2rk ;field ADD2 ] LDA cell-is-opened ?&opened !&closed
+		%TOP_RIGHT    { #0c } ( 0b1100 )
+		%TOP_LEFT     { #09 } ( 0b1001 )
+		%BOTTOM_RIGHT { #06 } ( 0b0110 )
+		%BOTTOM_LEFT  { #03 } ( 0b0011 )
+
+		%DRAW_INNER_PIXEL ( x* y* -- ) {
+			.Screen/y DEO2
+			.Screen/x DEO2
+			[ LIT2 01 -Screen/pixel ] DEO
+		}
+		%DRAW_OUTER_PIXEL ( x* y* -- ) {
+			.Screen/y DEO2
+			.Screen/x DEO2
+			[ LIT2 00 -Screen/pixel ] DEO
+		}
+
+		[ STH2rk cell-top    ;field ADD2 ] LDA cell-is-closed #30 SFT
+		[ STH2rk cell-right  ;field ADD2 ] LDA cell-is-closed #20 SFT ORA
+		[ STH2rk cell-bottom ;field ADD2 ] LDA cell-is-closed #10 SFT ORA
+		[ STH2rk cell-left   ;field ADD2 ] LDA cell-is-closed         ORA
+		( corner-bits )
+
+		[ STH2rk ;field ADD2 ]
+		LDA cell-is-opened ?&opened !&closed
 		&opened
 			( Inner top right )
-			[ STH2rk cell-right ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			AND ?&inner-top-right !&inner-no-top-right
-			&inner-top-right
-				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
-				;&cell-y LDA2                  .Screen/y DEO2
-				[ #01 .Screen/pixel ] DEO
-			&inner-no-top-right
+			( corner-bits ) DUP TOP_RIGHT AND TOP_RIGHT NEQ ?{
+				;&cell-x LDA2 CELL_SIZE-1 ADD2
+				;&cell-y LDA2
+				DRAW_INNER_PIXEL
+			}
 
 			( Inner top left )
-			[ STH2rk cell-left  ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			AND ?&inner-top-left !&inner-no-top-left
-			&inner-top-left
-				;&cell-x LDA2 .Screen/x DEO2
-				;&cell-y LDA2 .Screen/y DEO2
-				[ #01 .Screen/pixel ] DEO
-			&inner-no-top-left
+			( corner-bits ) DUP TOP_LEFT AND TOP_LEFT NEQ ?{
+				;&cell-x LDA2
+				;&cell-y LDA2
+				DRAW_INNER_PIXEL
+			}
 
 			( Inner bottom right )
-			[ STH2rk cell-right  ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			AND ?&inner-bottom-right !&inner-no-bottom-right
-			&inner-bottom-right
-				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
-				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
-				[ #01 .Screen/pixel ] DEO
-			&inner-no-bottom-right
+			( corner-bits ) DUP BOTTOM_RIGHT AND BOTTOM_RIGHT NEQ ?{
+				;&cell-x LDA2 CELL_SIZE-1 ADD2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2
+				DRAW_INNER_PIXEL
+			}
 
 			( Inner bottom left )
-			[ STH2rk cell-left   ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 EQU
-			AND ?&inner-bottom-left !&inner-no-bottom-left
-			&inner-bottom-left
-				;&cell-x LDA2                  .Screen/x DEO2
-				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
-				[ #01 .Screen/pixel ] DEO
-			&inner-no-bottom-left
-			[ !&over ]
+			( corner-bits ) DUP BOTTOM_LEFT AND BOTTOM_LEFT NEQ ?{
+				;&cell-x LDA2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2
+				DRAW_INNER_PIXEL
+			}
+
+			!&over
 		&closed
 			( Outer top right )
-			[ STH2rk cell-right ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			[ STH2rk cell-top   ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			AND ?&outer-top-right !&outer-no-top-right
-			&outer-top-right
-				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
-				;&cell-y LDA2                  .Screen/y DEO2
-				[ #00 .Screen/pixel ] DEO
-			&outer-no-top-right
+			( corner-bits ) DUP TOP_RIGHT AND ?{
+				;&cell-x LDA2 CELL_SIZE-1 ADD2
+				;&cell-y LDA2
+				DRAW_OUTER_PIXEL
+			}
 
 			( Outer top left )
-			[ STH2rk cell-left ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			[ STH2rk cell-top  ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			AND ?&outer-top-left !&outer-no-top-left
-			&outer-top-left
-				;&cell-x LDA2 .Screen/x DEO2
-				;&cell-y LDA2 .Screen/y DEO2
-				[ #00 .Screen/pixel ] DEO
-			&outer-no-top-left
+			( corner-bits ) DUP TOP_LEFT AND ?{
+				;&cell-x LDA2
+				;&cell-y LDA2
+				DRAW_OUTER_PIXEL
+			}
 
 			( Outer bottom right )
-			[ STH2rk cell-right  ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			AND ?&outer-bottom-right !&outer-no-bottom-right
-			&outer-bottom-right
-				;&cell-x LDA2 CELL_SIZE-1 ADD2 .Screen/x DEO2
-				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
-				[ #00 .Screen/pixel ] DEO
-			&outer-no-bottom-right
+			( corner-bits ) DUP BOTTOM_RIGHT AND ?{
+				;&cell-x LDA2 CELL_SIZE-1 ADD2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2
+				DRAW_OUTER_PIXEL
+			}
 
 			( Outer bottom left )
-			[ STH2rk cell-left   ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			[ STH2rk cell-bottom ;field ADD2 ] LDA CELL_OPENED AND #00 NEQ
-			AND ?&outer-bottom-left !&outer-no-bottom-left
-			&outer-bottom-left
-				;&cell-x LDA2                  .Screen/x DEO2
-				;&cell-y LDA2 CELL_SIZE-1 ADD2 .Screen/y DEO2
-				[ #00 .Screen/pixel ] DEO
-			&outer-no-bottom-left
+			( corner-bits ) DUP BOTTOM_LEFT AND ?{
+				;&cell-x LDA2
+				;&cell-y LDA2 CELL_SIZE-1 ADD2
+				DRAW_OUTER_PIXEL
+			}
 		&over
-		
+
+		( corner-bits ) POP
+
 		STH2r INC2
 		!&again
-	} POP2 RET
+	} POP2
+RET
+
 ( 16x16 cells field + 1 always zero cell )
 @field $0100 $1
 
