@@ -2,7 +2,7 @@
 
 set -e
 
-FILE="minesweeper"
+FILE="bombswp"
 SRC="$FILE.tal"
 BUILD="$FILE.rom"
 

@@ -16,7 +16,7 @@ Minesweeper implemented in [UXNTAL][] for [UXN][]! YEAH!
 
 ```sh
 ./build.sh
-uxnemu -2x minesweeper.rom
+uxnemu -2x bombswp.rom
 ```
 
 ## License
