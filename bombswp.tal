@@ -24,8 +24,9 @@
 ( Cell width and height in pixels )
 %CELL_SIZE    { #0008 }
 %CELL_SIZE-1  { #0007 } ( CELL_SIZE - 1 )
-%CELL_OPENED  { #10 }
-%CELL_FLAGGED { #20 }
+%CELL_TYPE    { #0f } ( 0b00001111 )
+%CELL_OPENED  { #10 } ( 0b00010000 )
+%CELL_FLAGGED { #20 } ( 0b00100000 )
 
 ( == Macros == )
 
@@ -38,9 +39,10 @@
 
 %DEC2 ( num* -- num*-1 ) { #ffff ADD2 }
 
-%cell-is-closed  ( cell -- bool ) { [ CELL_OPENED  AND ] #00 EQU }
-%cell-is-opened  ( cell -- bool ) { [ CELL_OPENED  AND ] #00 NEQ }
-%cell-is-flagged ( cell -- bool ) { [ CELL_FLAGGED AND ] #00 NEQ }
+%cell-is-opened      ( cell -- bool ) { CELL_OPENED  AND }
+%cell-is-closed      ( cell -- bool ) { cell-is-opened #00 EQU }
+%cell-is-flagged     ( cell -- bool ) { CELL_FLAGGED AND }
+%cell-has-nbor-mines ( cell -- bool ) { CELL_TYPE    AND }
 
 |0100 ( -> )
 	( Set theme )
@@ -123,18 +125,46 @@ RET
 ( == Field == )
 
 @cell-open ( idx* -- changed )
-	[ ;field ADD2 ] LDAk ( addr* cell ) STH
+	STH2
+	[ STH2rk ;field ADD2 ] LDAk ( addr* cell ) STH
 
 	STHrk ( cell ) cell-is-opened
 	STHrk ( cell ) cell-is-flagged
 	ORA #00 EQU ?{
-		( addr* | cell )
-		POP2 POPr
+		( addr* | idx* cell )
+		POP2 POPr POP2r
 		#00 RET
 	}
 
-	STHr ( cell ) CELL_OPENED EOR
+	STHr ( cell )
+	DUP cell-has-nbor-mines ?{
+		( This cell has 0 n-boring mines )
+
+		%OPEN {
+			;field ADD2 LDAk
+			CELL_OPENED ORA
+			ROT ROT STA
+		}
+
+		( | idx* )
+		STH2rk cell-top    ( top )
+		DUP2   cell-right  ( top right )
+		STH2rk cell-right  ( right )
+		DUP2   cell-bottom ( bottom right )
+		STH2rk cell-bottom ( bottom )
+		DUP2   cell-left   ( bottom left )
+		STH2rk cell-left   ( left )
+		DUP2   cell-top    ( top left )
+
+		OPEN OPEN OPEN OPEN
+		OPEN OPEN OPEN OPEN
+	}
+
+	( | idx* ) POP2r
+
+	CELL_OPENED EOR
 	ROT ROT ( cell addr* ) STA
+
 	#01
 RET
 
@@ -171,14 +201,8 @@ RET
 	( Draw cell )
 	[ ( idx* ) ;field ADD2 ] LDA ( addr* cell )
 
-	[ DUP cell-is-closed ] ?&closed
-	( opened )
-		( cell ) [ CELL_OPENED EOR ] BYTE2SHORT ( cell* )
-
-		[ CELL_SIZE.MUL2 ;sprite-cell-opened ADD2 ] .Screen/addr DEO2
-		[ #01 .Screen/sprite ] DEO
-		!&over
-	&closed
+	[ DUP cell-is-opened ] ?&opened
+	( closed )
 		;sprite-cell-closed .Screen/addr DEO2
 		[ #01 .Screen/sprite ] DEO
 
@@ -186,6 +210,12 @@ RET
 		&flagged
 			;sprite-flag .Screen/addr DEO2
 			[ #0f .Screen/sprite ] DEO
+		!&over
+	&opened
+		( cell ) [ CELL_OPENED EOR ] BYTE2SHORT ( cell* )
+
+		[ CELL_SIZE.MUL2 ;sprite-cell-opened ADD2 ] .Screen/addr DEO2
+		[ #01 .Screen/sprite ] DEO
 	&over
 RET
 
