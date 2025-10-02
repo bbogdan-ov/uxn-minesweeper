@@ -364,7 +364,14 @@ RET
 	} POP2
 RET
 
+( TODO: this "always zero cell" also counts )
+( | as a regular cell, so i need an )
+( | another way to handle field overflow )
+
 ( 16x16 cells field + 1 always zero cell )
+( When cell-right, cell-left, cell-top, )
+( | cell-bottom overflow the field, they )
+( | will point to this "always zero cell" )
 @field $0100 $1
 
 ( == Utils == )
